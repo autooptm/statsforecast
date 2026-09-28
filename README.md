@@ -1,3 +1,62 @@
+<div align="center">
+  <a href="https://autooptm.com"><img src=".autooptm/logo.png" width="96" alt="AutoOptm"></a>
+
+  <h1>statsforecast · optimized by <a href="https://autooptm.com">AutoOptm</a></h1>
+
+  <p><b>5.24x faster end to end</b> on the command below, output verified against the stock program.</p>
+
+  <p>
+    <a href="https://autooptm.com"><img alt="speedup" src="https://img.shields.io/badge/end--to--end-5.24x-2ea44f"></a>
+    <a href="https://github.com/Nixtla/statsforecast/commit/d31d8abfea69ec714074f5d6bbba131f5e9aec43"><img alt="base" src="https://img.shields.io/badge/upstream-d31d8abfea69-blue"></a>
+    <img alt="card" src="https://img.shields.io/badge/measured%20on-CPU%20only%20no%20card-lightgrey">
+  </p>
+</div>
+
+> This is a fork of [Nixtla/statsforecast](https://github.com/Nixtla/statsforecast) at commit
+> [`d31d8abfea69`](https://github.com/Nixtla/statsforecast/commit/d31d8abfea69ec714074f5d6bbba131f5e9aec43) with a benchmark driver (`ao_bench.py`) and the AutoOptm patch applied on top.
+> The optimisation was found, measured and verified automatically by [AutoOptm](https://autooptm.com);
+> the patch is kept under [`.autooptm/`](.autooptm/).
+
+Every optimisation is on by default and the command runs unchanged — same file, same flags, same outputs. Every change is behind a switch that defaults on; see `.autooptm/autooptm.patch`.
+
+## The result — `python ao_bench.py`
+
+| | |
+|---|---|
+| **Command** | `python ao_bench.py` |
+| **Entry point** | `ao_bench.py` |
+| **Unit measured** | one batch of series fitted and forecast by StatsForecast, as ao_bench.py's loop receives it; CPU only |
+| **Before (stock)** | 1.082e+04 ms per unit |
+| **After (this tree, all switches default ON)** | 1899 ms per unit |
+| **Speedup** | **5.24x** end to end on CPU only (no card), host noise floor 1.1% |
+| **Output** | bit-identical forecasts: max_abs_diff = 0, cosine 1.0 |
+
+### What changed
+
+| File | Where | Gain (alone) |
+|---|---|---|
+| `ao_bench.py` | main(), the per-batch StatsForecast construction | 4.84x |
+| `python/statsforecast/core.py` | _StatsForecast._forecast_parallel | 1.19x |
+| `ao_bench.py` | module level | 1.04x |
+
+
+## Reproduce
+
+```bash
+git clone https://github.com/autooptm/statsforecast-ao.git
+cd statsforecast-ao
+# set up exactly as upstream documents, then:
+python ao_bench.py
+```
+
+Everything AutoOptm added is the single commit on top of upstream: the benchmark driver `ao_bench.py` (added by this fork) and the optimisation; `git diff d31d8abfea69` is the same change as the patch file under `.autooptm/`.
+
+---
+
+<div align="center"><sub>Optimized by <a href="https://autooptm.com">AutoOptm</a> — point it at a repository, get back a verified speedup and the patch.</sub></div>
+
+---
+
 # Nixtla
 
 [![Tweet](https://img.shields.io/twitter/url/http/shields.io.svg?style=social)](https://twitter.com/intent/tweet?text=Statistical%20Forecasting%20Algorithms%20by%20Nixtla%20&url=https://github.com/Nixtla/statsforecast&via=nixtlainc&hashtags=StatisticalModels,TimeSeries,Forecasting)

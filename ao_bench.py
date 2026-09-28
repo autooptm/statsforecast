@@ -1,0 +1,86 @@
+"""statsforecast benchmark: monthly forecasts for a fleet of series, in batches.
+
+    python ao_bench.py                 # 500 series x 240 months, batches of 50
+    python ao_bench.py --series 100 --batch 25
+
+Generates seasonal monthly series (trend + annual cycle + noise), then for each
+batch fits AutoETS, AutoARIMA and SeasonalNaive with StatsForecast and forecasts
+12 months ahead. The loop over batches is the unit of work. Writes
+out/forecasts.csv and out/summary.json.
+"""
+import argparse
+import json
+import os
+import time
+
+import numpy as np
+import pandas as pd
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+_AO_N_JOBS = int(os.environ.get("AO_N_JOBS", "0")) or ((os.cpu_count() or 1) + 1)
+
+
+def make_panel(n_series, length, seed=0):
+    rng = np.random.default_rng(seed)
+    ds = pd.date_range("2005-01-31", periods=length, freq="ME")
+    frames = []
+    for i in range(n_series):
+        level = rng.uniform(50, 500)
+        trend = rng.uniform(-0.5, 1.5)
+        amp = rng.uniform(5, 60)
+        phase = rng.uniform(0, 2 * np.pi)
+        t = np.arange(length)
+        y = (level + trend * t + amp * np.sin(2 * np.pi * t / 12 + phase)
+             + rng.standard_normal(length) * rng.uniform(2, 15))
+        frames.append(pd.DataFrame({"unique_id": f"s{i:04d}", "ds": ds,
+                                    "y": np.maximum(y, 1.0).astype(np.float64)}))
+    return pd.concat(frames, ignore_index=True)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--series", type=int, default=500)
+    ap.add_argument("--length", type=int, default=240)
+    ap.add_argument("--batch", type=int, default=50)
+    ap.add_argument("--horizon", type=int, default=12)
+    ap.add_argument("--out", default=os.path.join(HERE, "out"))
+    args = ap.parse_args()
+    os.makedirs(args.out, exist_ok=True)
+
+    from statsforecast import StatsForecast
+    from statsforecast.models import AutoARIMA, AutoETS, SeasonalNaive
+
+    t0 = time.perf_counter()
+    panel = make_panel(args.series, args.length)
+    ids = panel.unique_id.unique()
+    print(f"panel: {len(ids)} series x {args.length} months ({time.perf_counter() - t0:.1f}s)",
+          flush=True)
+
+    batches = [ids[i:i + args.batch] for i in range(0, len(ids), args.batch)]
+    rows, walls, outputs = [], [], []
+    for b, batch_ids in enumerate(batches):
+        t0 = time.perf_counter()
+        df = panel[panel.unique_id.isin(batch_ids)]
+        sf = StatsForecast(models=[AutoETS(season_length=12), AutoARIMA(season_length=12),
+                                   SeasonalNaive(season_length=12)], freq="ME",
+                           n_jobs=_AO_N_JOBS)
+        fc = sf.forecast(df=df, h=args.horizon)
+        dt = time.perf_counter() - t0
+        walls.append(dt)
+        outputs.append(fc)
+        rows.append({"batch": b, "series": len(batch_ids), "s": round(dt, 4),
+                     "mean_ets": float(fc["AutoETS"].mean()),
+                     "mean_arima": float(fc["AutoARIMA"].mean())})
+        print(f"  batch {b:2d} {len(batch_ids):3d} series {dt:.3f}s "
+              f"ETS {fc['AutoETS'].mean():.1f} ARIMA {fc['AutoARIMA'].mean():.1f}", flush=True)
+
+    pd.concat(outputs).to_csv(os.path.join(args.out, "forecasts.csv"))
+    with open(os.path.join(args.out, "summary.json"), "w") as fh:
+        json.dump({"batches": rows, "total_s": sum(walls),
+                   "median_s": float(np.median(walls))}, fh, indent=1)
+    print(f"done: {len(walls)} batches, median {np.median(walls):.3f}s, total {sum(walls):.2f}s")
+
+
+if __name__ == "__main__":
+    main()

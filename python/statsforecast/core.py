@@ -1,6 +1,8 @@
 __all__ = ["StatsForecast"]
 
 
+import atexit
+import contextlib
 import datetime as dt
 import errno
 import inspect
@@ -527,6 +529,31 @@ class GroupedArray(BaseGroupedArray):
             error_distribution=error_distribution,
             error_params=error_params,
         )
+
+
+_ao_opt_4: Dict[str, Any] = {}
+
+
+def _ao_opt_2():
+    executor = _ao_opt_4.pop("executor", None)
+    if executor is not None:
+        executor.shutdown(wait=True)
+
+
+@contextlib.contextmanager
+def _ao_opt_3(n_jobs):
+    if os.environ.get("AO_OPT_1", "1") != "1":
+        with ProcessPoolExecutor(n_jobs) as executor:
+            yield executor
+        return
+    executor = _ao_opt_4.get("executor")
+    if executor is None or _ao_opt_4.get("n_jobs") != n_jobs:
+        _ao_opt_2()
+        executor = ProcessPoolExecutor(n_jobs)
+        _ao_opt_4["executor"] = executor
+        _ao_opt_4["n_jobs"] = n_jobs
+        atexit.register(_ao_opt_2)
+    yield executor
 
 
 def _get_n_jobs(n_groups, n_jobs):
@@ -1374,7 +1401,7 @@ class _StatsForecast:
     def _forecast_parallel(self, h, fitted, X, level, target_col):
         gas, Xs = self._get_gas_Xs(X=X, tasks_per_job=100)
         results = [None] * len(gas)
-        with ProcessPoolExecutor(self.n_jobs) as executor:
+        with _ao_opt_3(self.n_jobs) as executor:
             future2pos = {
                 executor.submit(
                     ga._single_threaded_forecast,
